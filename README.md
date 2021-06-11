@@ -1,7 +1,7 @@
-# Single File Mess Game Engine
-This is a test of a single file game engine "mess." 
+# "Single File Mess" Game Engine
+This is a test of a single file game engine. 
 
-Well, not so much of a mess as it is organized. The single file is kind of nice as you don't need to worry about including complex stuff. It has very basic game engine features.  This would be good for prototyping quick games in c++, or making small micro-size games.
+Well, not TOO much of a mess as it *is* organized. The single file is kind of nice as you don't need to worry about including complex stuff. It has very basic game engine features.  This would be good for prototyping quick games in c++, or making small micro-size games.
 
 ## How To..
 include "sfm.h" 
