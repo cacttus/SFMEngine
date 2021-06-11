@@ -1,7 +1,7 @@
 #include "./sfm.h"
 
 //Short cut
-typedef IDOBJ_TEST::GL GL;
+typedef SFM::GL GL;
 
 struct v2x2 {
   float x, y, u, v;
@@ -13,12 +13,12 @@ struct v2x2 {
   }
 };
 
-class MyGame : public IDOBJ_TEST::Game {
+class MyGame : public SFM::Game {
 public:
-  std::shared_ptr<IDOBJ_TEST::ShaderProgram> _prog;
-  std::shared_ptr<IDOBJ_TEST::Texture2D> _tex;
+  std::shared_ptr<SFM::ShaderProgram> _prog;
+  std::shared_ptr<SFM::Texture2D> _tex;
 
-  MyGame(std::shared_ptr<IDOBJ_TEST::App> a) : IDOBJ_TEST::Game(a) {
+  MyGame(std::shared_ptr<SFM::App> a) : SFM::Game(a) {
   }
   virtual void init() override {
     //OpenGL is loaded. Window Loaded - ready to rock.
@@ -60,19 +60,19 @@ public:
                        "  //  _gPickOut = _ufPickId;\n" +
                        "}\n";
 
-    _prog = std::make_shared<IDOBJ_TEST::ShaderProgram>();
+    _prog = std::make_shared<SFM::ShaderProgram>();
     _prog->compile(vert, frag);
 
-    std::shared_ptr<IDOBJ_TEST::Image> img = std::make_shared<IDOBJ_TEST::Image>();
+    std::shared_ptr<SFM::Image> img = std::make_shared<SFM::Image>();
     img->load("./mario.png");
-    _tex = std::make_shared<IDOBJ_TEST::Texture2D>(img, true, false, false);
+    _tex = std::make_shared<SFM::Texture2D>(img, true, false, false);
 
-    _inds = std::make_shared<IDOBJ_TEST::GpuBuffer>("indexes", GL_ELEMENT_ARRAY_BUFFER, sizeof(unsigned int));
+    _inds = std::make_shared<SFM::GpuBuffer>("indexes", GL_ELEMENT_ARRAY_BUFFER, sizeof(unsigned int));
     _inds->allocate(6);
     std::vector<unsigned int> inds = { 0, 2, 3, 0, 3, 1 };
     _inds->copyDataClientServer(inds.size(), inds.data(), sizeof(unsigned int));
 
-    _verts = std::make_shared<IDOBJ_TEST::GpuBuffer>("vetrts", GL_ARRAY_BUFFER, sizeof(v2x2));
+    _verts = std::make_shared<SFM::GpuBuffer>("vetrts", GL_ARRAY_BUFFER, sizeof(v2x2));
     _verts->allocate(4);
     std::vector<v2x2> verts = { v2x2(.10, .50, 0, 0), v2x2(.30, .50, 1, 0), v2x2(.10, .10, 0, 1), v2x2(.30, .10, 1, 1) };
     _verts->copyDataClientServer(verts.size(), verts.data(), sizeof(v2x2));
@@ -82,7 +82,7 @@ public:
   virtual void render() override {
     glDisable(GL_CULL_FACE);
 
-    _tex->bind(IDOBJ_TEST::TextureChannel::e::Channel0);
+    _tex->bind(SFM::TextureChannel::e::Channel0);
     _prog->bind();
     _prog->setTextureUf(_tex, "_ufTexture0");
 
@@ -91,9 +91,9 @@ public:
     if (vLoc == -1 || xLoc == -1) {
     }
     else {
-      IDOBJ_TEST::OglErr::chkErrDbg();
+      SFM::OglErr::chkErrDbg();
       _verts->bindBuffer();
-      IDOBJ_TEST::OglErr::chkErrDbg();
+      SFM::OglErr::chkErrDbg();
       GL::glEnableVertexAttribArray(vLoc);
       GL::glVertexAttribPointer(
         vLoc,
@@ -103,7 +103,7 @@ public:
         sizeof(v2x2),           // stride
         (GLvoid*)((intptr_t)0)  // array buffer offset
       );
-      IDOBJ_TEST::OglErr::chkErrDbg();
+      SFM::OglErr::chkErrDbg();
 
       GL::glEnableVertexAttribArray(xLoc);
       GL::glVertexAttribPointer(
@@ -114,28 +114,28 @@ public:
         sizeof(v2x2),                               // stride
         (GLvoid*)((intptr_t)0 + sizeof(float) * 2)  // array buffer offset
       );
-      IDOBJ_TEST::OglErr::chkErrDbg();
+      SFM::OglErr::chkErrDbg();
 
       _inds->bindBuffer();
       glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, (GLvoid*)0);
 
       _inds->unbindBuffer();
       _verts->unbindBuffer();
-      _tex->unbind(IDOBJ_TEST::TextureChannel::e::Channel0);
+      _tex->unbind(SFM::TextureChannel::e::Channel0);
       _prog->unbind();
     }
   }
-  std::shared_ptr<IDOBJ_TEST::GpuBuffer> _inds;
-  std::shared_ptr<IDOBJ_TEST::GpuBuffer> _verts;
+  std::shared_ptr<SFM::GpuBuffer> _inds;
+  std::shared_ptr<SFM::GpuBuffer> _verts;
 };
 
 ///////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////
 
 int main(int argc, char** argv) {
-  std::shared_ptr<IDOBJ_TEST::App> a = std::make_shared<IDOBJ_TEST::App>();
+  std::shared_ptr<SFM::App> a = std::make_shared<SFM::App>();
 
-  IDOBJ_TEST::Log::info("Hello World.... running the app");
+  SFM::Log::info("Hello World.... running the app");
 
   std::shared_ptr<MyGame> g = std::make_shared<MyGame>(a);
   a->run(g);

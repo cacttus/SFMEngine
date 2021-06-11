@@ -37,7 +37,7 @@
 
 #pragma endregion
 
-namespace IDOBJ_TEST {
+namespace SFM {
 ///////////////////////////////////////////////////////////////
 // TYPEDEF
 
@@ -286,7 +286,6 @@ public:
 
     return out;
   }
-
   static std::vector<string_t> split(const string_t& in, char del) {
     std::vector<string_t> ret;
     split(in, del, ret);
@@ -2402,6 +2401,8 @@ private:
 ////////////////////////////////////////////////////////////////////////////////////
 // PostDec / Deps
 
+#pragma region Deps
+
 bool OglErr::handleErrors(bool bShowNote, bool bDoNotBreak, bool doNotLog, const string_t& shaderName, bool clearOnly) {
   App::checkSDLErr(doNotLog || !clearOnly, clearOnly);
 
@@ -2416,6 +2417,9 @@ void staticDebugBreak(const string_t& str) {
 void runtimeAssertion(const string_t& str) {
   BRThrowException(str);
 }
+
+#pragma endregion
+
 ////////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////////
 
