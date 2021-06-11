@@ -1,4 +1,4 @@
-#include "./SFMEngine.h"
+#include "./sfm.h"
 
 //Short cut
 typedef IDOBJ_TEST::GL GL;
