@@ -3,14 +3,36 @@
 //Short cut
 typedef sf2d::GL GL;
 
+
+
 class MyGame : public sf2d::Game {
 public:
-  std::shared_ptr<sf2d::ShaderProgram> _prog = nullptr;
-  std::shared_ptr<sf2d::Texture2D> _tex = nullptr;
-
   MyGame(std::shared_ptr<sf2d::App> a) : sf2d::Game(a) {
   }
   virtual void init() override {
+    //Load Texture
+    std::shared_ptr<sf2d::Image32> img = std::make_shared<sf2d::Image32>();
+    img->load("./mario.png");
+    _tex = std::make_shared<sf2d::Texture2D>(img, true, false, false);
+
+    //Old init
+    init_test();
+
+    //New Stuff
+    _quads = std::make_shared<sf2d::QuadBlitter>();
+    _quads->setTexture(_tex);
+  }
+  virtual void update(double delta) override {
+    _quads->reset();
+    _quads->setQuad(glm::vec2(10,10), app()->viewport());
+  }
+  virtual void render() override {
+    //render_test();
+    _quads->render(app()->viewport());
+  }
+
+private:
+  void init_test() {
     //OpenGL is loaded. Window Loaded - ready to rock.
     std::string vert = Stz "#version 420 core\n" +
                        "//Vert Shader\n" +
@@ -53,10 +75,6 @@ public:
     _prog = std::make_shared<sf2d::ShaderProgram>();
     _prog->compile(vert, frag);
 
-    std::shared_ptr<sf2d::Image32> img = std::make_shared<sf2d::Image32>();
-    img->load("./mario.png");
-    _tex = std::make_shared<sf2d::Texture2D>(img, true, false, false);
-
     _inds = std::make_shared<sf2d::GpuBuffer>("indexes", GL_ELEMENT_ARRAY_BUFFER, sizeof(unsigned int));
     _inds->allocate(6);
     std::vector<unsigned int> inds = { 0, 2, 3, 0, 3, 1 };
@@ -67,9 +85,7 @@ public:
     std::vector<sf2d::v2x2> verts = { sf2d::v2x2(.10, .50, 0, 0), sf2d::v2x2(.30, .50, 1, 0), sf2d::v2x2(.10, .10, 0, 1), sf2d::v2x2(.30, .10, 1, 1) };
     _verts->copyDataClientServer(verts.size(), verts.data(), sizeof(sf2d::v2x2));
   }
-  virtual void update(double delta) override {
-  }
-  virtual void render() override {
+  void render_test() {
     glDisable(GL_CULL_FACE);
 
     _tex->bind(sf2d::TextureChannel::e::Channel0);
@@ -91,7 +107,7 @@ public:
         2,                      // size
         GL_FLOAT,               // type
         GL_FALSE,               // normalized?
-        sizeof(sf2d::v2x2),           // stride
+        sizeof(sf2d::v2x2),     // stride
         (GLvoid*)((intptr_t)0)  // array buffer offset
       );
       sf2d::OglErr::chkErrDbg();
@@ -102,7 +118,7 @@ public:
         2,                                          // size
         GL_FLOAT,                                   // type
         GL_FALSE,                                   // normalized?
-        sizeof(sf2d::v2x2),                               // stride
+        sizeof(sf2d::v2x2),                         // stride
         (GLvoid*)((intptr_t)0 + sizeof(float) * 2)  // array buffer offset
       );
       sf2d::OglErr::chkErrDbg();
@@ -116,8 +132,15 @@ public:
       _prog->unbind();
     }
   }
+
+  //Old test stuff
   std::shared_ptr<sf2d::GpuBuffer> _inds;
   std::shared_ptr<sf2d::GpuBuffer> _verts;
+  std::shared_ptr<sf2d::ShaderProgram> _prog = nullptr;
+  std::shared_ptr<sf2d::Texture2D> _tex = nullptr;
+
+  //New Stuff
+  std::shared_ptr<sf2d::QuadBlitter> _quads = nullptr;
 };
 
 ///////////////////////////////////////////////////////////////////////////////

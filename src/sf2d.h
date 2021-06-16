@@ -13,6 +13,7 @@
 #include <string.h>
 #include <stdio.h>
 #include <glm/glm.hpp>
+#include <glm/ext.hpp>
 #include <linux/input.h>
 #include <unistd.h>
 #include <stdlib.h>
@@ -121,6 +122,7 @@ class GraphicsWindowCreateParameters;
 class Input;
 class Gu;
 class Log;
+class RenderViewport;
 
 #pragma endregion
 
@@ -195,6 +197,11 @@ public:
 
 #pragma region Vertexes
 
+struct Box2f {
+  glm::vec2 _p0;
+  glm::vec2 _p1;
+};
+
 struct Pixel4f {
 public:
   float r = 0, g = 0, b = 0, a = 0;
@@ -225,7 +232,13 @@ struct v3n3x2 {
     x = dx;
   }
 };
-
+struct v_GuiVert {
+  glm::vec4 _rect;
+  glm::vec4 _clip;
+  glm::vec4 _tex;
+  glm::vec2 _texsiz;
+  glm::uvec2 _pick_color;
+};
 #pragma endregion
 
 class StringUtil {
@@ -497,6 +510,33 @@ private:
   int32_t _iMouseWheel = 0;
 };
 
+class RenderViewport {
+public:
+  uint32_t width() { return _width; }
+  uint32_t height() { return _height; }
+
+  RenderViewport(uint32_t w, uint32_t h) {
+    updateWH(w, h);
+  }
+  bool updateWH(uint32_t w, uint32_t h) {
+    //Returns true if w/h has changed.
+    if (_last_width != w || _last_height != h) {
+      _last_width = _width;
+      _last_height = _height;
+      _width = w;
+      _height = h;
+      return true;
+    }
+    return false;
+  }
+
+private:
+  uint32_t _width = 1;
+  uint32_t _height = 1;
+  uint32_t _last_width = 1;
+  uint32_t _last_height = 1;
+};
+
 class Gu {
 public:
   static Input* getGlobalInput() {
@@ -518,6 +558,27 @@ public:
   static uint64_t getMilliSeconds() {
     return getMicroSeconds() / 1000;
   }
+  static void guiQuad2d(Box2f& pq, std::shared_ptr<RenderViewport> vp) {
+    //Transforms a quad for the matrix-less Gui projection.
+
+    //The resulting coordinates for the GPU are -0.5 +0.5 in both axes with the center being in the center of the screen
+    //Translate a 2D screen quad to be rendered in a shader.
+    //So* our quad is from TOP Left - OpenGL is Bottom Left - this fixes this.
+    float w = (float)vp->width();
+    float w2 = w * 0.5f;
+    float h = (float)vp->height();
+    float h2 = h * 0.5f;
+
+    //Subtract from viewport center
+    pq._p0.x -= w2;
+    pq._p1.x -= w2;
+
+    //Invert text to show rightsize up and divide by perspective
+    pq._p0.x = pq._p0.x / w2;
+    pq._p0.y = (h2 - pq._p0.y - 1) / h2;
+    pq._p1.x = pq._p1.x / w2;
+    pq._p1.y = (h2 - pq._p1.y - 1) / h2;
+  }
 
 private:
   static std::unique_ptr<Input> _pInput;
@@ -533,8 +594,10 @@ public:
   virtual void update(double delta) = 0;
   virtual void render() = 0;
 
-protected:
-  std::shared_ptr<App> _pApp;
+  std::shared_ptr<App> app() { return _pApp; }
+
+private:
+  std::shared_ptr<App> _pApp = nullptr;
 };
 
 //Interface for OpenGL
@@ -1213,19 +1276,12 @@ public:
         unsigned int height = 0;
         int err = lodepng_decode32(&_pPixels, &width, &height, (unsigned char*)data, (size_t)dataSize);
         if (err != 0) {
-          //FB should free itself.
-          //  Gu::SDLFileFree(imgData);
           BRThrowException(Stz "Could not load image " + loc + " err code = " + err);
         }
         else {
           _width = (int32_t)width;
           _height = (int32_t)height;
-          Image32::flipImage20161206(_pPixels, _width, _height);
-          // create(image, width, height, false);
-
-          //ret = std::make_shared<Img32>(width, height, (uint8_t*)image);
-
-          //delete image;
+          //Image32::flipImage20161206(_pPixels, _width, _height);
         }
       }
       else {
@@ -1241,6 +1297,7 @@ private:
   void createBlank(int32_t width, int32_t height, std::shared_ptr<Pixel4f> pix) {
     _width = width;
     _height = height;
+    AssertOrThrow2(_width > 0 && _height > 0);
     _iDataSize = width * height * 4;
     _pPixels = (unsigned char*)malloc(_iDataSize);  // Malloc instead of new since lodepng uses malloc.
   }
@@ -1248,8 +1305,10 @@ private:
     if (_pPixels) {
       //lodepng_free - this is lodepng's memory manager
       free(_pPixels);
-      _pPixels = nullptr;
     }
+    _pPixels = nullptr;
+    _iDataSize = 0;
+    _width = _height = 0;
   }
   static void flipImage20161206(uint8_t* image, int width, int height) {
     int rowSiz = width * 4;
@@ -1682,16 +1741,32 @@ public:
   virtual ~ShaderProgram() {
     _pVert = nullptr;
     _pFrag = nullptr;
+    _pGeom = nullptr;
     GL::glDeleteProgram(_glId);
   }
   GLuint glId() { return _glId; }
+  void compileVert(const std::string& src);
+
   void compile(const std::string& vert, const std::string& frag) {
+    compile(vert, "", frag);
+  }
+  void compile(const std::string& vert, const std::string& geom, const std::string& frag) {
     try {
       _glId = GL::glCreateProgram();
+
+      _pVert = nullptr;
+      _pGeom = nullptr;
+      _pFrag = nullptr;
 
       _pVert = std::make_unique<Shader>();
       _pVert->compile(GL_VERTEX_SHADER, vert);
       OglErr::chkErrRt();
+
+      if (geom.length()) {
+        _pGeom = std::make_unique<Shader>();
+        _pGeom->compile(GL_GEOMETRY_SHADER, geom);
+        OglErr::chkErrRt();
+      }
 
       _pFrag = std::make_unique<Shader>();
       _pFrag->compile(GL_FRAGMENT_SHADER, frag);
@@ -1699,6 +1774,10 @@ public:
 
       GL::glAttachShader(_glId, _pVert->glId());
       OglErr::chkErrRt();
+      if (_pGeom) {
+        GL::glAttachShader(_glId, _pGeom->glId());
+        OglErr::chkErrRt();
+      }
       GL::glAttachShader(_glId, _pFrag->glId());
       OglErr::chkErrRt();
       GL::glLinkProgram(_glId);
@@ -1742,6 +1821,14 @@ public:
       OglErr::chkErrDbg();
     }
   }
+  void setMatrixUf(glm::mat4& m, const string_t& name) {
+    auto loc = GL::glGetUniformLocation(_glId, name.c_str());
+    OglErr::chkErrDbg();
+    if (loc != 0) {
+      GL::glUniformMatrix4fv(loc, 1, false, (GLfloat*)&m);
+      OglErr::chkErrDbg();
+    }
+  }
   void getProgramErrorLog(std::vector<string_t>& outLog) {
     // - Do your stuff
     GLsizei buf_size;
@@ -1772,6 +1859,7 @@ private:
   GLuint _glId = 0;
   std::unique_ptr<Shader> _pVert;
   std::unique_ptr<Shader> _pFrag;
+  std::unique_ptr<Shader> _pGeom;
 };
 
 class GpuBuffer {
@@ -1993,160 +2081,457 @@ class PhysicsComponent {
 class MeshComponent {
 };
 
-class QuadBufferMesh {
+class QuadBlitter {
 public:
-  QuadBufferMesh(int_fast32_t count = 8192, std::shared_ptr<Texture2D> pTex = nullptr) {
+  typedef v_GuiVert GuiVert;
+  QuadBlitter(int_fast32_t count = 8192, std::shared_ptr<Texture2D> pTex = nullptr) {
     init(count);
   }
-  virtual ~QuadBufferMesh() {
+  virtual ~QuadBlitter() {
     GL::glDeleteVertexArrays(1, &_vao);
   }
   void setTexture(std::shared_ptr<Texture2D> pTex) {
     _pTex = pTex;
   }
-  void setQuad(glm::vec3& v){
-    
+  std::shared_ptr<Texture2D> getTex() {
+    //Set default tex if not available.
+    if (_pTex == nullptr) {
+      return Texture2D::default1x1Tex();
+    }
+    return _pTex;
+  }
+  void reset() {
+    _used = 0;
+  }
+  void setQuad(const glm::vec2& point, std::shared_ptr<RenderViewport> vp,  const glm::vec4& color = glm::vec4(1,1,1,1)) {
+    if (_used >= _verts_local.size()) {
+      BRLogError("Too many quads used.");
+      Gu::debugBreak();
+      return;
+    }
+
+    Box2f cpyPos;
+    ///////TEST
+    ///////TEST
+    cpyPos._p0.x = point.x;
+    cpyPos._p0.y = point.y;
+    cpyPos._p1.x = 50;//getTex()->width();
+    cpyPos._p1.y = 50;//getTex()->height();
+    ///////TEST
+    ///////TEST
+
+    // convert to screen coordinates
+    Gu::guiQuad2d(cpyPos, vp);
+
+    GuiVert& v = _verts_local[_used];
+
+    v._rect.x = cpyPos._p0.x;
+    v._rect.y = cpyPos._p0.y;
+    v._rect.z = cpyPos._p1.x;
+    v._rect.w = cpyPos._p1.y;
+
+    //Clip Rect.  For discard
+    //  v._clip = makeClipRectForRender(b2ClipRect);
+    //if (Gu::getRenderSettings()->getDebug()->getShowGuiBoxesAndDisableClipping()) {
+    //Disable clip
+    v._clip.x = -9999;
+    v._clip.y = -9999;
+    v._clip.z = 9999;
+    v._clip.w = 9999;
+    //  }
+
+    //Texs
+    //Not sure, I think this is in texture (sub-texture) space, [0,1] not pixels.
+    v._tex.x = 0;  // _q2Tex._p0.x;  //GL - bottom left
+    v._tex.y = 0;  //_q2Tex._p0.y;
+    v._tex.z = 1;  //_q2Tex._p1.x;  //GL - top right *this essentially flips it upside down
+    v._tex.w = 1;  //_q2Tex._p1.y;
+
+    //I think this is in texture space (sub-texture in the case of the GUI)
+    v._texsiz.x = 1;  // = fabsf(_pTexture->tex()->uv1().x - _pTexture->tex()->uv0().x);
+    v._texsiz.y = 1;  //
+    //
+    // if (_pTexture != nullptr) {
+    //   v._texsiz.x = fabsf(_pTexture->tex()->uv1().x - _pTexture->tex()->uv0().x);
+    //   v._texsiz.y = fabsf(_pTexture->tex()->uv0().y - _pTexture->tex()->uv1().y);  //Uv0 - uv1 - because we flipped coords bove
+    // }
+    // else {
+    //   //*this is for "Fixed" textures, e.g. fonts and text.  We compute them in UiLabel first
+    //   v._texsiz.x = fabsf(v._tex.z - v._tex.x);
+    //   v._texsiz.y = fabsf(v._tex.w - v._tex.y);  //y is flipfloped again
+    // }
+
+    /*
+    //**Texture Adjust - modulating repeated textures causes seaming issues, especially with texture filtering
+    //adjust the texture coordinates by some pixels to account for that.  0.5f seems to work well.
+    static float pixAdjust = 0.51f;  // # of pixels to adjust texture by
+                                     //#ifdef _DEBUG
+                                     //    if (GetAsyncKeyState(VK_LEFT) & 0x8000) {
+                                     //        pixAdjust -= 0.005;
+                                     //    }
+                                     //    if (GetAsyncKeyState(VK_RIGHT) & 0x8000) {
+                                     //        pixAdjust += 0.005;
+                                     //    }
+                                     //#endif
+    float w1px = 0;                  // 1 pixel subtract from the u/v to prevent creases during texture modulation
+    float h1px = 0;
+    if (_pTexture != nullptr) {
+      if (_pTexture->tex()->getWidth() > 0 && v._texsiz.x > 0) {
+        w1px = 1.0f / _pTexture->tex()->getWidth();
+        w1px *= v._texsiz.x;
+        w1px *= pixAdjust;
+      }
+      if (_pTexture->tex()->getHeight() > 0 && v._texsiz.y > 0) {
+        h1px = 1.0f / _pTexture->tex()->getHeight();
+        h1px *= v._texsiz.y;
+        h1px *= pixAdjust;
+      }
+    }
+    v._texsiz.x -= w1px * 2.0f;
+    v._texsiz.y -= h1px * 2.0f;
+    v._tex.x += w1px;
+    v._tex.y += h1px;
+    v._tex.z -= w1px;
+    v._tex.w -= h1px;
+*/
+
+    //**End texture adjust
+
+    //Pick Color
+    v._pick_color.x = 0;  //_iPickId;
+
+    //Display Color
+    //vec4 vc = getColor();
+    v._pick_color.y =   ////    0xFFFFFFFF; //White
+      ((int)(color.x * 255.0f) << 24) |
+      ((int)(color.y * 255.0f) << 16) |
+      ((int)(color.z * 255.0f) << 8) |
+      ((int)(color.w * 255.0f) << 8);
+    //_verts_local[_used] = v;
+
     _used++;
   }
-  void render() {
+
+  void render(std::shared_ptr<RenderViewport> vp) {
+    if (_used == 0) {
+      return;
+    }
     glDisable(GL_CULL_FACE);
 
-    //Set default tex if not available.
-    std::shared_ptr<Texture2D> tex = _pTex;
-    if (tex == nullptr) {
-      tex = Texture2D::default1x1Tex();
-    }
+    std::shared_ptr<Texture2D> tex = getTex();
+
+    copyVerts();
 
     tex->bind(TextureChannel::e::Channel0);
     _prog->bind();
+
+    // auto mproj = glm::perspective(60.0f, (float)((float)vp->width() / (float)vp->height()), 1.0f, 1000.0f);
+    // auto mview = glm::lookAt(glm::vec3(0, 0, -10), glm::vec3(0, 0, 0), glm::vec3(0, 1, 0));
+
     _prog->setTextureUf(tex, "_ufTexture0");
+    // _prog->setMatrixUf(mview, "_ufView");
+    // _prog->setMatrixUf(mproj, "_ufProj");
+
+    //test_inline_vao();
+
     GL::glBindVertexArray(_vao);
-   // _inds->bindBuffer();
+    // _inds->bindBuffer();
     glDrawArrays(GL_POINTS, 0, _used);
-   // _inds->unbindBuffer();
+    // _inds->unbindBuffer();
     GL::glBindVertexArray(0);
     _prog->unbind();
     tex->unbind(TextureChannel::e::Channel0);
   }
+  void test_inline_vao() {
+    GLint _v401 = GL::glGetAttribLocation(_prog->glId(), "_v401");
+    GLint _v402 = GL::glGetAttribLocation(_prog->glId(), "_v402");
+    GLint _v403 = GL::glGetAttribLocation(_prog->glId(), "_v403");
+    GLint _v201 = GL::glGetAttribLocation(_prog->glId(), "_v201");
+    GLint _u201 = GL::glGetAttribLocation(_prog->glId(), "_u201");
 
+    if (_v401 == -1 || _v402 == -1 || _v403 == -1 || _v201 == -1 || _u201 == -1) {
+      BRLogError("Failed to find one or more attributes for shader.");
+      Gu::debugBreak();
+    }
+    else {
+      OglErr::chkErrDbg();
+      _verts->bindBuffer();
+      OglErr::chkErrDbg();
+      GL::glEnableVertexAttribArray(_v401);
+      GL::glVertexAttribPointer(
+        _v401,
+        4,                      // size
+        GL_FLOAT,               // type
+        GL_FALSE,               // normalized?
+        sizeof(GuiVert),        // stride
+        (GLvoid*)((intptr_t)0)  // array buffer offset
+      );
+      OglErr::chkErrDbg();
+      GL::glEnableVertexAttribArray(_v402);
+      GL::glVertexAttribPointer(
+        _v402,
+        4,                                          // size
+        GL_FLOAT,                                   // type
+        GL_FALSE,                                   // normalized?
+        sizeof(GuiVert),                            // stride
+        (GLvoid*)((intptr_t)0 + sizeof(glm::vec4))  // array buffer offset
+      );
+      OglErr::chkErrDbg();
+      GL::glEnableVertexAttribArray(_v403);
+      GL::glVertexAttribPointer(
+        _v403,
+        4,                                                              // size
+        GL_FLOAT,                                                       // type
+        GL_FALSE,                                                       // normalized?
+        sizeof(GuiVert),                                                // stride
+        (GLvoid*)((intptr_t)0 + sizeof(glm::vec4) + sizeof(glm::vec4))  // array buffer offset
+      );
+      OglErr::chkErrDbg();
+      GL::glEnableVertexAttribArray(_v201);
+      GL::glVertexAttribPointer(
+        _v201,
+        2,                                                                                  // size
+        GL_FLOAT,                                                                           // type
+        GL_FALSE,                                                                           // normalized?
+        sizeof(GuiVert),                                                                    // stride
+        (GLvoid*)((intptr_t)0 + sizeof(glm::vec4) + sizeof(glm::vec4) + sizeof(glm::vec4))  // array buffer offset
+      );
+      OglErr::chkErrDbg();
+      GL::glEnableVertexAttribArray(_u201);
+      GL::glVertexAttribIPointer(
+        _u201,
+        2,  // size
+        GL_UNSIGNED_INT,
+        sizeof(GuiVert),                                                                                        // stride
+        (GLvoid*)((intptr_t)0 + sizeof(glm::vec4) + sizeof(glm::vec4) + sizeof(glm::vec4) + sizeof(glm::vec2))  // array buffer offset
+      );
+      OglErr::chkErrDbg();
+    }
+  }
 
 private:
   void init(uint_fast32_t count = 8192) {
     _count = count;
     createProgram();
-    createVAO();
-    //
-    //     _inds = std::make_shared<GpuBuffer>("indexes", GL_ELEMENT_ARRAY_BUFFER, sizeof(unsigned int));
-    //     _inds->allocate(6 * _count);
-    //     std::vector<unsigned int> inds = { 0, 2, 3, 0, 3, 1 };
-    //     _inds->copyDataClientServer(inds.size(), inds.data(), sizeof(unsigned int));
 
-    _verts = std::make_shared<GpuBuffer>("verts", GL_ARRAY_BUFFER, sizeof(v3n3x2));
+    _verts = std::make_shared<GpuBuffer>("verts", GL_ARRAY_BUFFER, sizeof(GuiVert));
     _verts->allocate(_count);
 
-    _verts_local.reserve((size_t)_count);
+    _verts_local = std::vector<GuiVert>((size_t)_count);
+    _verts->copyDataClientServer(_verts_local.size(), _verts_local.data(), sizeof(_verts_local[0]));
 
-    auto a = sizeof(_verts_local[0]);
-    auto b = sizeof(v3n3x2);
-
-    _verts->copyDataClientServer(_verts_local.size(), _verts_local.data(), sizeof(v3n3x2));
+    createVAO();
+  }
+  void copyVerts() {
+    _verts->copyDataClientServer(_used, _verts_local.data(), sizeof(_verts_local[0]));
   }
   void createProgram() {
-    std::string vert = Stz "#version 420 core\n" +
-                       "//Vert Shader\n" +
+    std::string vert = Stz "#version 430\n" +
+                       "layout(location = 0) in vec4 _v401;//rect\n" +
+                       "layout(location = 1) in vec4 _v402;//clip\n" +
+                       "layout(location = 2) in vec4 _v403;//tex\n" +
+                       "layout(location = 3) in vec2 _v201;//texsiz\n" +
+                       "layout(location = 4) in uvec2 _u201;//pick_color\n" +
                        "\n" +
-                       "layout(location = 0) in vec3 _v301;\n" +
-                       "layout(location = 1) in vec3 _n301;\n" +
-                       "layout(location = 2) in vec2 _x201;\n" +
+                       "out vec4 _rectVS;\n" +
+                       "out vec4 _clipVS;\n" +
+                       "out vec4 _texVS;\n" +
+                       "out vec2 _texsizVS;\n" +
+                       "flat out uvec2 _pick_colorVS;\n" +
                        "\n" +
-                       "out vec3 _v3Out;\n" +
-                       "out vec3 _n3Out;\n" +
-                       "out vec2 _x2Out;\n" +
+                       "void main() {\n" +
+                       "    _rectVS = _v401;\n" +
+                       "    _clipVS = _v402;\n" +
+                       "    _texVS = _v403;\n" +
+                       "    _texsizVS = _v201;\n" +
+                       "    _pick_colorVS = _u201;\n" +
                        "\n" +
-                       "uniform mat4 _ufProj;\n" + 
-                       "uniform mat4 _ufView;\n" + 
-                       "\n" +
-                       "void main()\n" +
-                       "{\n" +
-                       "    //this is the stuff from the GUI shader.  It should work.  Note we don't even need a matrix\n" +
-                       "    _x2Out = _x201;\n" +
-                       "    _n3Out = _n301;\n" +
-                       "    vec4 transform = _ufProj * _ufView * vec4(_v301.x, _v301.y, _v301.z, 1);\n" +
-                       "    _v3Out = transform.xyz;\n"
-                       "    gl_Position =  transform;\n" +
+                       "    \n" +
+                       "	gl_Position =  vec4(_v401.x, _v401.y, -1, 1);	\n" +
                        "}\n";
-    std::string geom = Stz "#version 420 core\n" +
-                       "//Vert Shader\n" +
+
+    std::string geom = Stz "#version 430\n" +
+                       "layout(points) in;\n" +
+                       "layout(triangle_strip, max_vertices=4) out;\n" +
                        "\n" +
-                       "layout(location = 0) in vec2 _v201;\n" +
-                       "layout(location = 1) in vec2 _x201;\n" +
+                       "in vec4 _rectVS[];\n" +
+                       "in vec4 _clipVS[];\n" +
+                       "in vec4 _texVS[];\n" +
+                       "in vec2 _texsizVS[];\n" +
+                       "flat in uvec2 _pick_colorVS[];\n" +
                        "\n" +
-                       "out vec2 _x2Out;\n" +
-                       "out vec3 _v3Out;\n" +
+                       "out vec2 _vert;\n" +
+                       "out vec2 _tex;\n" +
                        "\n" +
-                       "void main()\n" +
-                       "{\n" +
-                       "    //this is the stuff from the GUI shader.  It should work.  Note we don't even need a matrix\n" +
-                       "    _x2Out = _x201;\n" +
-                       "    _v3Out = vec3(_v201.x, _v201.y, -1);\n" +
-                       "    gl_Position =  vec4(_v201.x, _v201.y, -1, 1);\n" +
+                       "flat out vec4 _clip;\n" +
+                       "flat out vec2 _texSiz;//We can do compute this in the GS and output better data before the PS\n" +
+                       "flat out uvec2 _pick_color;\n" +
+                       "flat out vec2 _texPos;//don't interpolate\n" +
+                       "\n" +
+                       "\n" +
+                       "float p0x(vec4 f) { return f.x; }\n" +
+                       "float p0y(vec4 f) { return f.y; }\n" +
+                       "float p1x(vec4 f) { return f.z; }\n" +
+                       "float p1y(vec4 f) { return f.w; }\n" +
+                       "\n" +
+                       "void setGS(){\n" +
+                       "//Uniform primitie values\n" +
+                       "    _clip        = _clipVS[0];\n" +
+                       "    _texSiz      = _texsizVS[0];\n" +
+                       "    _pick_color  = _pick_colorVS[0];\n" +
+                       "    _texPos      = vec2(_texVS[0].x, _texVS[0].y);//not sure why xw.  x,y is already in opengl's BL oeiinf\n" +
+                       "}\n" +
+                       "\n" +
+                       "void main() {\n" +
+                       "    /*\n" +
+                       "    0x0y                   1x0y\n" +
+                       "        0------------ ----2\n" +
+                       "        |          /      |\n" +
+                       "        |  /              |\n" +
+                       "        1 ----------------3\n" +
+                       "    0x1y                   1x1y\n" +
+                       "    */\n" +
+                       "    \n" +
+                       "    setGS();\n" +
+                       "    _tex            = vec2(p0x(_texVS [0]), p0y(_texVS [0]));\n" +
+                       "    _vert           = vec2(p0x(_rectVS[0]), p0y(_rectVS[0]));\n" +
+                       "    gl_Position     = vec4(p0x(_rectVS[0]), p0y(_rectVS[0]), -1, 1);\n" +
+                       "    EmitVertex();\n" +
+                       "    \n" +
+                       "    setGS();\n" +
+                       "    _tex            = vec2(p0x(_texVS [0]), p1y(_texVS [0]));\n" +
+                       "    _vert           = vec2(p0x(_rectVS[0]), p1y(_rectVS[0]));\n" +
+                       "    gl_Position     = vec4(p0x(_rectVS[0]), p1y(_rectVS[0]), -1, 1);\n" +
+                       "    EmitVertex();\n" +
+                       "    \n" +
+                       "    setGS();\n" +
+                       "    _tex            = vec2(p1x(_texVS [0]), p0y(_texVS [0]));\n" +
+                       "    _vert           = vec2(p1x(_rectVS[0]), p0y(_rectVS[0]));\n" +
+                       "    gl_Position     = vec4(p1x(_rectVS[0]), p0y(_rectVS[0]), -1, 1);\n" +
+                       "    EmitVertex();\n" +
+                       "    \n" +
+                       "    setGS();\n" +
+                       "    _tex            = vec2(p1x(_texVS [0]), p1y(_texVS [0]));\n" +
+                       "    _vert           = vec2(p1x(_rectVS[0]), p1y(_rectVS[0]));\n" +
+                       "    gl_Position     = vec4(p1x(_rectVS[0]), p1y(_rectVS[0]), -1, 1);\n" +
+                       "    EmitVertex();\n" +
+                       "    \n" +
+                       "    EndPrimitive();\n" +
+                       "\n" +
+                       "    \n" +
+                       "    \n" +
                        "}\n";
-    std::string frag = Stz "#version 420 core\n" +
-                       "//Frag Shader\n" +
+    std::string frag = Stz "#version 430\n" +
+                       "//layout(location = 0) out vec4 _gColorOut;\n" +
+                       "out vec4 _gColorOut;\n" +
+                       //"layout(location = 1) out uint _gPickOut;\n" +
                        "\n" +
                        "uniform sampler2D _ufTexture0;\n" +
                        "\n" +
-                       "in vec3 _v3Out;\n" +
-                       "in vec2 _x2Out;\n" +
-                       "out vec4 _gColorOut;\n" +
+                       "in vec2 _vert;\n" +
+                       "flat in vec4 _clip;\n" +
+                       "in vec2 _tex;\n" +
+                       "flat in vec2 _texPos;//Origin of the texture coords (top left)\n" +
+                       "flat in vec2 _texSiz;\n" +
+                       "flat in uvec2 _pick_color;\n" +
                        "\n" +
-                       "void main() {\n" +
-                       "  _gColorOut = texture(_ufTexture0, vec2(_x2Out));\n" +
-                       "  if(_gColorOut.a <= 0.001) {\n" +
-                       "    discard;\n" +
-                       "    }\n" +
+                       "void main(){\n" +
+                       "    if(_vert.x < _clip.x \n" +
+                       "       || _vert.y < _clip.y \n" +
+                       "       || _vert.x > _clip.z \n" +
+                       "       || _vert.y > _clip.w) { \n" +
+                       "       discard; \n" +
+                       "   }\n" +
+                       "   \n" +
+                       "   //Texture Scaling\n" +
+                       "   //We need texpos here = p + mod(a-p, siz);\n" +
+                       "   vec2 texmod;\n" +
+                       "   texmod.x = _texPos.x + mod(_tex.x - _texPos.x, _texSiz.x);\n" +
+                       "   texmod.y = _texPos.y + mod(_tex.y - _texPos.y, _texSiz.y);\n" +
+                       "   \n" +
+                       "	vec4 tx = texture(_ufTexture0, vec2(texmod));\n" +
+                       "    if(tx.a < 0.001){\n" +
+                       "  		discard;\n" +
+                       "  	} \n" +
+                       "    \n" +
+                       "    float r = float((_pick_color.y>>24) & 0xFF) / 255.0;\n" +
+                       "    float g = float((_pick_color.y>>16) & 0xFF) / 255.0;\n" +
+                       "    float b = float((_pick_color.y>>8) & 0xFF) / 255.0;\n" +
+                       "   \n" +
+                       "    _gColorOut = tx * vec4(r, g, b, 1.0);\n" +
                        "\n" +
-                       " // _gPositionOut = vec4(_v3Out, 0);\n" +
-                       " // _gNormalOut = vec4(0,0,0,0);//Flat Shade\n" +
-                       " // _gPlaneOut = vec4(0,0,0,0);\n" +
-                       "  //  _gPickOut = _ufPickId;\n" +
+                       "  //  _gPickOut = _pick_color.x;\n" +
                        "}\n";
 
     _prog = std::make_shared<ShaderProgram>();
-    _prog->compile(vert, frag);
+    _prog->compile(vert, geom, frag);
   }
   void createVAO() {
     GL::glGenVertexArrays(1, &_vao);
     GL::glBindVertexArray(_vao);
     {
       //Very basic vert + tex. The screen coordinates are -1,1 x and -1,1 y
-      GLint vLoc = GL::glGetAttribLocation(_prog->glId(), "_v201");
-      GLint xLoc = GL::glGetAttribLocation(_prog->glId(), "_x201");
-      if (vLoc == -1 || xLoc == -1) {
+      GLint _v401 = GL::glGetAttribLocation(_prog->glId(), "_v401");
+      GLint _v402 = GL::glGetAttribLocation(_prog->glId(), "_v402");
+      GLint _v403 = GL::glGetAttribLocation(_prog->glId(), "_v403");
+      GLint _v201 = GL::glGetAttribLocation(_prog->glId(), "_v201");
+      GLint _u201 = GL::glGetAttribLocation(_prog->glId(), "_u201");
+
+      if (_v401 == -1 || _v402 == -1 || _v403 == -1 || _v201 == -1 || _u201 == -1) {
+        BRLogError("Failed to find one or more attributes for shader.");
+        Gu::debugBreak();
       }
       else {
         OglErr::chkErrDbg();
         _verts->bindBuffer();
         OglErr::chkErrDbg();
-        GL::glEnableVertexAttribArray(vLoc);
+        GL::glEnableVertexAttribArray(_v401);
         GL::glVertexAttribPointer(
-          vLoc,
-          2,                      // size
+          _v401,
+          4,                      // size
           GL_FLOAT,               // type
           GL_FALSE,               // normalized?
-          sizeof(v2x2),           // stride
+          sizeof(GuiVert),        // stride
           (GLvoid*)((intptr_t)0)  // array buffer offset
         );
         OglErr::chkErrDbg();
-
-        GL::glEnableVertexAttribArray(xLoc);
+        GL::glEnableVertexAttribArray(_v402);
         GL::glVertexAttribPointer(
-          xLoc,
-          2,                                          // size
+          _v402,
+          4,                                          // size
           GL_FLOAT,                                   // type
           GL_FALSE,                                   // normalized?
-          sizeof(v2x2),                               // stride
-          (GLvoid*)((intptr_t)0 + sizeof(float) * 2)  // array buffer offset
+          sizeof(GuiVert),                            // stride
+          (GLvoid*)((intptr_t)0 + sizeof(glm::vec4))  // array buffer offset
+        );
+        OglErr::chkErrDbg();
+        GL::glEnableVertexAttribArray(_v403);
+        GL::glVertexAttribPointer(
+          _v403,
+          4,                                                              // size
+          GL_FLOAT,                                                       // type
+          GL_FALSE,                                                       // normalized?
+          sizeof(GuiVert),                                                // stride
+          (GLvoid*)((intptr_t)0 + sizeof(glm::vec4) + sizeof(glm::vec4))  // array buffer offset
+        );
+        OglErr::chkErrDbg();
+        GL::glEnableVertexAttribArray(_v201);
+        GL::glVertexAttribPointer(
+          _v201,
+          2,                                                                                  // size
+          GL_FLOAT,                                                                           // type
+          GL_FALSE,                                                                           // normalized?
+          sizeof(GuiVert),                                                                    // stride
+          (GLvoid*)((intptr_t)0 + sizeof(glm::vec4) + sizeof(glm::vec4) + sizeof(glm::vec4))  // array buffer offset
+        );
+        OglErr::chkErrDbg();
+        GL::glEnableVertexAttribArray(_u201);
+        GL::glVertexAttribIPointer(
+          _u201,
+          2,  // size
+          GL_UNSIGNED_INT,
+          sizeof(GuiVert),                                                                                        // stride
+          (GLvoid*)((intptr_t)0 + sizeof(glm::vec4) + sizeof(glm::vec4) + sizeof(glm::vec4) + sizeof(glm::vec2))  // array buffer offset
         );
         OglErr::chkErrDbg();
       }
@@ -2155,13 +2540,12 @@ private:
   }
 
   std::shared_ptr<ShaderProgram> _prog = nullptr;
-  //std::shared_ptr<GpuBuffer> _inds = nullptr;
   std::shared_ptr<GpuBuffer> _verts = nullptr;
   std::shared_ptr<Texture2D> _pTex = nullptr;
   GLuint _vao = 0;
   uint32_t _count = 1;
-  uint32_t _used=0;
-  std::vector<v3n3x2> _verts_local;
+  uint32_t _used = 0;
+  std::vector<GuiVert> _verts_local;
 };
 
 class App {
@@ -2173,9 +2557,17 @@ class App {
   SDL_GLContext _context;
   uint32_t _iSupportedDepthSize = 0;
   bool _bVsync = false;
+  std::shared_ptr<RenderViewport> _viewport = nullptr;
+  glm::vec4 _clearColor = glm::vec4(1, 0, 1, 1);
+  bool _bClearColorChanged = true;
 
 public:
   std::shared_ptr<GL> _pGL = std::make_shared<GL>();
+  std::shared_ptr<RenderViewport> viewport() { return _viewport; }
+  void setClearColor(const glm::vec4& v) {
+    _clearColor = v;
+    _bClearColorChanged = true;
+  }
 
 public:
   void run(std::shared_ptr<Game> g) {
@@ -2196,12 +2588,20 @@ public:
         last_delta = curtime - last_time;
         last_time = curtime;
 
-        g->update(last_delta);
-        float cr = 1;  //(float)(random() % RAND_MAX) / (float)RAND_MAX;
-        float cg = 1;  //(float)(random() % RAND_MAX) / (float)RAND_MAX;
-        float cb = 1;  //(float)(random() % RAND_MAX) / (float)RAND_MAX;
+        //Technically, we could just use the SDL resize event to prevent unnecessary resize code.
+        int last_w = 1, last_h = 1;
+        SDL_GetWindowSize(_pWindow, &last_w, &last_h);
+        if (_viewport->updateWH((uint32_t)last_w, (uint32_t)last_h)) {
+          //Hypothetically We would resize FBO's here as well
+        }
 
-        glClearColor(cr, cg, cb, 1);
+        g->update(last_delta);
+
+        if (_bClearColorChanged) {
+          glClearColor(_clearColor.r, _clearColor.g, _clearColor.b, _clearColor.a);
+          _bClearColorChanged = false;
+        }
+
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
         g->render();
@@ -2242,6 +2642,7 @@ private:
     setSDLGLFlags(4, 3);
     _pWindow = makeSDLWindow(params, SDL_WINDOW_OPENGL, true);
     initGLContext(_pWindow);
+    _viewport = std::make_shared<RenderViewport>(params._width, params._height);
   }
   bool initGLContext(SDL_Window* sdlw) {
     bool bRet = false;
@@ -2626,6 +3027,6 @@ void runtimeAssertion(const string_t& str) {
 
 #pragma endregion
 
-}  // namespace SFM
+}  // namespace sf2d
 
 #endif
