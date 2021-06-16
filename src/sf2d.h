@@ -2103,7 +2103,7 @@ public:
   void reset() {
     _used = 0;
   }
-  void setQuad(const glm::vec2& point, std::shared_ptr<RenderViewport> vp,  const glm::vec4& color = glm::vec4(1,1,1,1)) {
+  void setQuad(const glm::vec2& point, std::shared_ptr<RenderViewport> vp, const glm::vec4& color = glm::vec4(1, 1, 1, 1), const glm::vec2& wh = glm::vec2(-1, -1)) {
     if (_used >= _verts_local.size()) {
       BRLogError("Too many quads used.");
       Gu::debugBreak();
@@ -2111,14 +2111,10 @@ public:
     }
 
     Box2f cpyPos;
-    ///////TEST
-    ///////TEST
     cpyPos._p0.x = point.x;
     cpyPos._p0.y = point.y;
-    cpyPos._p1.x = 50;//getTex()->width();
-    cpyPos._p1.y = 50;//getTex()->height();
-    ///////TEST
-    ///////TEST
+    cpyPos._p1.x = wh.x <= 0 ? getTex()->width() : wh.x;
+    cpyPos._p1.y = wh.y <= 0 ? getTex()->height() : wh.y;
 
     // convert to screen coordinates
     Gu::guiQuad2d(cpyPos, vp);
@@ -2161,7 +2157,7 @@ public:
     //   v._texsiz.y = fabsf(v._tex.w - v._tex.y);  //y is flipfloped again
     // }
 
-    /*
+    
     //**Texture Adjust - modulating repeated textures causes seaming issues, especially with texture filtering
     //adjust the texture coordinates by some pixels to account for that.  0.5f seems to work well.
     static float pixAdjust = 0.51f;  // # of pixels to adjust texture by
@@ -2175,14 +2171,14 @@ public:
                                      //#endif
     float w1px = 0;                  // 1 pixel subtract from the u/v to prevent creases during texture modulation
     float h1px = 0;
-    if (_pTexture != nullptr) {
-      if (_pTexture->tex()->getWidth() > 0 && v._texsiz.x > 0) {
-        w1px = 1.0f / _pTexture->tex()->getWidth();
+    if (getTex() != nullptr) {
+      if (getTex()->width() > 0 && v._texsiz.x > 0) {
+        w1px = 1.0f / getTex()->width();
         w1px *= v._texsiz.x;
         w1px *= pixAdjust;
       }
-      if (_pTexture->tex()->getHeight() > 0 && v._texsiz.y > 0) {
-        h1px = 1.0f / _pTexture->tex()->getHeight();
+      if (getTex()->height() > 0 && v._texsiz.y > 0) {
+        h1px = 1.0f / getTex()->height();
         h1px *= v._texsiz.y;
         h1px *= pixAdjust;
       }
@@ -2193,7 +2189,7 @@ public:
     v._tex.y += h1px;
     v._tex.z -= w1px;
     v._tex.w -= h1px;
-*/
+
 
     //**End texture adjust
 
@@ -2202,7 +2198,7 @@ public:
 
     //Display Color
     //vec4 vc = getColor();
-    v._pick_color.y =   ////    0xFFFFFFFF; //White
+    v._pick_color.y =  ////    0xFFFFFFFF; //White
       ((int)(color.x * 255.0f) << 24) |
       ((int)(color.y * 255.0f) << 16) |
       ((int)(color.z * 255.0f) << 8) |
@@ -2428,8 +2424,8 @@ private:
                        "\n" +
                        "uniform sampler2D _ufTexture0;\n" +
                        "\n" +
-                       "in vec2 _vert;\n" +
-                       "flat in vec4 _clip;\n" +
+                       "in vec2 _vert; //this is now the fragment position\n" +
+                       "flat in vec4 _clip;//This is now the fragment clip\n" +
                        "in vec2 _tex;\n" +
                        "flat in vec2 _texPos;//Origin of the texture coords (top left)\n" +
                        "flat in vec2 _texSiz;\n" +
