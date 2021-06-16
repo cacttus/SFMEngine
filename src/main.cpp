@@ -1,24 +1,14 @@
-#include "./sfm.h"
+#include "./sf2d.h"
 
 //Short cut
-typedef SFM::GL GL;
+typedef sf2d::GL GL;
 
-struct v2x2 {
-  float x, y, u, v;
-  v2x2(float dx, float dy, float du, float dv) {
-    x = dx;
-    y = dy;
-    u = du;
-    v = dv;
-  }
-};
-
-class MyGame : public SFM::Game {
+class MyGame : public sf2d::Game {
 public:
-  std::shared_ptr<SFM::ShaderProgram> _prog;
-  std::shared_ptr<SFM::Texture2D> _tex;
+  std::shared_ptr<sf2d::ShaderProgram> _prog = nullptr;
+  std::shared_ptr<sf2d::Texture2D> _tex = nullptr;
 
-  MyGame(std::shared_ptr<SFM::App> a) : SFM::Game(a) {
+  MyGame(std::shared_ptr<sf2d::App> a) : sf2d::Game(a) {
   }
   virtual void init() override {
     //OpenGL is loaded. Window Loaded - ready to rock.
@@ -60,82 +50,83 @@ public:
                        "  //  _gPickOut = _ufPickId;\n" +
                        "}\n";
 
-    _prog = std::make_shared<SFM::ShaderProgram>();
+    _prog = std::make_shared<sf2d::ShaderProgram>();
     _prog->compile(vert, frag);
 
-    std::shared_ptr<SFM::Image> img = std::make_shared<SFM::Image>();
+    std::shared_ptr<sf2d::Image32> img = std::make_shared<sf2d::Image32>();
     img->load("./mario.png");
-    _tex = std::make_shared<SFM::Texture2D>(img, true, false, false);
+    _tex = std::make_shared<sf2d::Texture2D>(img, true, false, false);
 
-    _inds = std::make_shared<SFM::GpuBuffer>("indexes", GL_ELEMENT_ARRAY_BUFFER, sizeof(unsigned int));
+    _inds = std::make_shared<sf2d::GpuBuffer>("indexes", GL_ELEMENT_ARRAY_BUFFER, sizeof(unsigned int));
     _inds->allocate(6);
     std::vector<unsigned int> inds = { 0, 2, 3, 0, 3, 1 };
     _inds->copyDataClientServer(inds.size(), inds.data(), sizeof(unsigned int));
 
-    _verts = std::make_shared<SFM::GpuBuffer>("vetrts", GL_ARRAY_BUFFER, sizeof(v2x2));
+    _verts = std::make_shared<sf2d::GpuBuffer>("vetrts", GL_ARRAY_BUFFER, sizeof(sf2d::v2x2));
     _verts->allocate(4);
-    std::vector<v2x2> verts = { v2x2(.10, .50, 0, 0), v2x2(.30, .50, 1, 0), v2x2(.10, .10, 0, 1), v2x2(.30, .10, 1, 1) };
-    _verts->copyDataClientServer(verts.size(), verts.data(), sizeof(v2x2));
+    std::vector<sf2d::v2x2> verts = { sf2d::v2x2(.10, .50, 0, 0), sf2d::v2x2(.30, .50, 1, 0), sf2d::v2x2(.10, .10, 0, 1), sf2d::v2x2(.30, .10, 1, 1) };
+    _verts->copyDataClientServer(verts.size(), verts.data(), sizeof(sf2d::v2x2));
   }
   virtual void update(double delta) override {
   }
   virtual void render() override {
     glDisable(GL_CULL_FACE);
 
-    _tex->bind(SFM::TextureChannel::e::Channel0);
+    _tex->bind(sf2d::TextureChannel::e::Channel0);
     _prog->bind();
     _prog->setTextureUf(_tex, "_ufTexture0");
 
+    //Very basic vert + tex. The screen coordinates are -1,1 x and -1,1 y
     GLint vLoc = GL::glGetAttribLocation(_prog->glId(), "_v201");
     GLint xLoc = GL::glGetAttribLocation(_prog->glId(), "_x201");
     if (vLoc == -1 || xLoc == -1) {
     }
     else {
-      SFM::OglErr::chkErrDbg();
+      sf2d::OglErr::chkErrDbg();
       _verts->bindBuffer();
-      SFM::OglErr::chkErrDbg();
+      sf2d::OglErr::chkErrDbg();
       GL::glEnableVertexAttribArray(vLoc);
       GL::glVertexAttribPointer(
         vLoc,
-        2,      // size
+        2,                      // size
         GL_FLOAT,               // type
         GL_FALSE,               // normalized?
-        sizeof(v2x2),           // stride
+        sizeof(sf2d::v2x2),           // stride
         (GLvoid*)((intptr_t)0)  // array buffer offset
       );
-      SFM::OglErr::chkErrDbg();
+      sf2d::OglErr::chkErrDbg();
 
       GL::glEnableVertexAttribArray(xLoc);
       GL::glVertexAttribPointer(
         xLoc,
-        2,                          // size
+        2,                                          // size
         GL_FLOAT,                                   // type
         GL_FALSE,                                   // normalized?
-        sizeof(v2x2),                               // stride
+        sizeof(sf2d::v2x2),                               // stride
         (GLvoid*)((intptr_t)0 + sizeof(float) * 2)  // array buffer offset
       );
-      SFM::OglErr::chkErrDbg();
+      sf2d::OglErr::chkErrDbg();
 
       _inds->bindBuffer();
       glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, (GLvoid*)0);
 
       _inds->unbindBuffer();
       _verts->unbindBuffer();
-      _tex->unbind(SFM::TextureChannel::e::Channel0);
+      _tex->unbind(sf2d::TextureChannel::e::Channel0);
       _prog->unbind();
     }
   }
-  std::shared_ptr<SFM::GpuBuffer> _inds;
-  std::shared_ptr<SFM::GpuBuffer> _verts;
+  std::shared_ptr<sf2d::GpuBuffer> _inds;
+  std::shared_ptr<sf2d::GpuBuffer> _verts;
 };
 
 ///////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////
 
 int main(int argc, char** argv) {
-  std::shared_ptr<SFM::App> a = std::make_shared<SFM::App>();
+  std::shared_ptr<sf2d::App> a = std::make_shared<sf2d::App>();
 
-  SFM::Log::info("Hello World.... running the app");
+  sf2d::Log::info("Hello World.... running the app");
 
   std::shared_ptr<MyGame> g = std::make_shared<MyGame>(a);
   a->run(g);

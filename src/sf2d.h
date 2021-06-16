@@ -1,4 +1,4 @@
-//Single File Mess 
+//Single File Mess
 //Game Engine
 
 #pragma once
@@ -37,7 +37,7 @@
 
 #pragma endregion
 
-namespace SFM {
+namespace sf2d {
 ///////////////////////////////////////////////////////////////
 // TYPEDEF
 
@@ -46,9 +46,6 @@ namespace SFM {
 typedef std::vector<char> ByteBuffer;
 
 #pragma endregion
-
-///////////////////////////////////////////////////////////////
-// STRING
 
 #pragma region Strings
 
@@ -95,9 +92,6 @@ std::string operator+(const std::string& str, const float& rhs) {
 
 #pragma endregion
 
-///////////////////////////////////////////////////////////////
-// ENUMS
-
 #pragma region Enums
 
 namespace ButtonState {
@@ -115,9 +109,6 @@ typedef enum { Left,
 
 #pragma endregion
 
-///////////////////////////////////////////////////////////////
-// FWD
-
 #pragma region FWD
 
 class TypeConv;
@@ -133,8 +124,6 @@ class Log;
 
 #pragma endregion
 
-///////////////////////////////////////////////////////////////
-
 class Log {
 public:
   static void error(const std::string& str) {
@@ -145,9 +134,7 @@ public:
   }
 };
 
-///////////////////////////////////////////////////////////////
-
-#pragma region System_Preproc
+#pragma region Preprocessor
 #define __out_
 #define __in_
 #define BRLogError(x) Log::error(Stz x)
@@ -180,8 +167,6 @@ void runtimeAssertion(const string_t& str);
 
 #pragma endregion
 
-///////////////////////////////////////////////////////////////
-
 class TypeConv {
 public:
   static int_fast32_t strToInt(const string_t& s) {
@@ -198,8 +183,6 @@ public:
   }
 };
 
-////////////////////////////////////////////////////////////////////////////
-
 class MathUtils {
 public:
   static int32_t getNumberOfDigits(int32_t i) {
@@ -210,7 +193,40 @@ public:
   }
 };
 
-////////////////////////////////////////////////////////////////////////////
+#pragma region Vertexes
+
+struct Pixel4f {
+public:
+  float r = 0, g = 0, b = 0, a = 0;
+  Pixel4f(float r = 0, float g = 0, float b = 0, float a = 0) {
+    this->r = r;
+    this->g = g;
+    this->b = b;
+    this->a = a;
+  }
+};
+
+struct v2x2 {
+  float x, y, u, v;
+  v2x2(float dx, float dy, float du, float dv) {
+    x = dx;
+    y = dy;
+    u = du;
+    v = dv;
+  }
+};
+struct v3n3x2 {
+  glm::vec3 v;
+  glm::vec3 n;
+  glm::vec2 x;
+  v3n3x2(glm::vec3& dv, glm::vec3& dn, glm::vec2& dx) {
+    v = dv;
+    n = dn;
+    x = dx;
+  }
+};
+
+#pragma endregion
 
 class StringUtil {
 public:
@@ -331,8 +347,6 @@ public:
   }
 };
 
-////////////////////////////////////////////////////////////////////////////
-
 class GraphicsWindowCreateParameters {
 public:
   static constexpr int Wintype_Desktop = 0;  //X11 doesn't encourage disabling buttons like win32, so we're going with 'window types' instead of disabling properties.
@@ -364,8 +378,6 @@ public:
   bool _show = true;               //Show after creating
   bool _forceAspectRatio = false;  //Forces the window buffer to be the same aspect as the screen.
 };
-
-////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 class FileSystem {
 public:
@@ -452,8 +464,6 @@ public:
   }
 };
 
-////////////////////////////////////////////////////////////////////////////
-
 class Input {
 public:
   void setKeyDown(SDL_Scancode code) {
@@ -487,8 +497,6 @@ private:
   int32_t _iMouseWheel = 0;
 };
 
-////////////////////////////////////////////////////////////////////////////
-
 class Gu {
 public:
   static Input* getGlobalInput() {
@@ -516,8 +524,6 @@ private:
 };
 std::unique_ptr<Input> Gu::_pInput;
 
-////////////////////////////////////////////////////////////////////////////
-
 class Game {
 public:
   Game(std::shared_ptr<App> a) {
@@ -531,7 +537,6 @@ protected:
   std::shared_ptr<App> _pApp;
 };
 
-////////////////////////////////////////////////////////////////////////////
 //Interface for OpenGL
 class GL {
 public:
@@ -765,8 +770,6 @@ public:
   }
 };
 
-////////////////////////////////////////////////////////////////////////////////////
-
 #pragma region GL_METHODS
 PFNGLUSEPROGRAMPROC GL::glUseProgram = nullptr;
 PFNGLBINDBUFFERARBPROC GL::glBindBuffer = nullptr;
@@ -865,8 +868,6 @@ PFNGLSHADERSTORAGEBLOCKBINDINGPROC GL::glShaderStorageBlockBinding = nullptr;
 PFNGLGETPROGRAMRESOURCEINDEXPROC GL::glGetProgramResourceIndex = nullptr;
 PFNGLCOPYIMAGESUBDATAPROC GL::glCopyImageSubData = nullptr;
 #pragma endregion
-
-////////////////////////////////////////////////////////////////////////////////////
 
 class OglErr {
 public:
@@ -1183,22 +1184,21 @@ private:
 bool OglErr::_bPrintingGPULog = false;
 GLint OglErr::_maxMsgLen = -1;
 
-////////////////////////////////////////////////////////////////////////////////////
-
-class Image {
-  unsigned char* _pPixels = nullptr;
-  int64_t _iDataSize = 0;
-  int32_t _width = 0;
-  int32_t _height = 0;
-
+//32 Bit Image, default layout: R, G, B, A
+class Image32 {
 public:
-  Image() {}
-  virtual ~Image() {
+  Image32() {}
+  virtual ~Image32() {
+    freeData();
   }
   int32_t width() { return _width; }
   int32_t height() { return _height; }
   unsigned char* pixels() { return _pPixels; }
-
+  static std::shared_ptr<Image32> default1x1Image(std::shared_ptr<Pixel4f> pix) {
+    std::shared_ptr<Image32> ret = std::make_shared<Image32>();
+    ret->createBlank(1, 1, pix);
+    return ret;
+  }
   void load(const string_t& loc) {
     std::string teximg = loc;
     int64_t dataSize = 0;
@@ -1220,7 +1220,7 @@ public:
         else {
           _width = (int32_t)width;
           _height = (int32_t)height;
-          // Img32::flipImage20161206(image, width, height);
+          Image32::flipImage20161206(_pPixels, _width, _height);
           // create(image, width, height, false);
 
           //ret = std::make_shared<Img32>(width, height, (uint8_t*)image);
@@ -1236,9 +1236,45 @@ public:
       BRLogError("File does not exist " + teximg);
     }
   }
-};
 
-////////////////////////////////////////////////////////////////////////////////////
+private:
+  void createBlank(int32_t width, int32_t height, std::shared_ptr<Pixel4f> pix) {
+    _width = width;
+    _height = height;
+    _iDataSize = width * height * 4;
+    _pPixels = (unsigned char*)malloc(_iDataSize);  // Malloc instead of new since lodepng uses malloc.
+  }
+  void freeData() {
+    if (_pPixels) {
+      //lodepng_free - this is lodepng's memory manager
+      free(_pPixels);
+      _pPixels = nullptr;
+    }
+  }
+  static void flipImage20161206(uint8_t* image, int width, int height) {
+    int rowSiz = width * 4;
+
+    uint8_t* rowTmp1 = new uint8_t[rowSiz];
+    int h2 = height / 2;
+
+    for (int j = 0; j < h2; ++j) {
+      uint8_t* ptRowDst = image + rowSiz * j;
+      uint8_t* ptRowSrc = image + rowSiz * (height - j - 1);
+
+      memcpy(rowTmp1, ptRowDst, rowSiz);
+      memcpy(ptRowDst, ptRowSrc, rowSiz);
+      memcpy(ptRowSrc, rowTmp1, rowSiz);
+    }
+
+    delete[] rowTmp1;
+  }
+
+private:
+  unsigned char* _pPixels = nullptr;
+  int64_t _iDataSize = 0;
+  int32_t _width = 0;
+  int32_t _height = 0;
+};
 
 #pragma region Texture
 
@@ -1267,9 +1303,7 @@ typedef enum {
 }
 class Texture2D {
 public:
-  uint32_t width() { return _iWidth; }
-  uint32_t height() { return _iHeight; }
-  Texture2D(std::shared_ptr<Image> img, bool genMipmaps, bool bRepeatU, bool bRepeatV) {
+  Texture2D(std::shared_ptr<Image32> img, bool genMipmaps, bool bRepeatU, bool bRepeatV) {
     _iWidth = img->width();
     _iHeight = img->height();
 
@@ -1363,6 +1397,16 @@ public:
   virtual ~Texture2D() {
     glDeleteTextures(1, &_glId);
   }
+  static std::shared_ptr<Texture2D> default1x1Tex() {
+    //Returns a 1x1 32 bit pixel white texture.
+    if (_pDefault1x1Tex == nullptr) {
+      std::shared_ptr<Image32> img = Image32::default1x1Image(std::make_shared<Pixel4f>(1, 1, 1, 1));
+      _pDefault1x1Tex = std::make_shared<Texture2D>(img, false, true, true);
+    }
+    return _pDefault1x1Tex;
+  }
+  uint32_t width() { return _iWidth; }
+  uint32_t height() { return _iHeight; }
   uint32_t boundChannel() {
     return _boundChannel;
   }
@@ -1509,11 +1553,11 @@ private:
   bool _bLoadFailed = false;
   bool _bTransparent = false;
   uint32_t _boundChannel = 0;
+  static std::shared_ptr<Texture2D> _pDefault1x1Tex;
 };
+std::shared_ptr<Texture2D> Texture2D::_pDefault1x1Tex = nullptr;
 
 #pragma endregion
-
-////////////////////////////////////////////////////////////////////////////////////
 
 class ShaderProgram {
   class Shader {
@@ -1730,8 +1774,6 @@ private:
   std::unique_ptr<Shader> _pFrag;
 };
 
-////////////////////////////////////////////////////////////////////////////////////
-
 class GpuBuffer {
 public:
   GpuBuffer(const string_t& mesh_name, GLenum bufferType, size_t iElementSize) : _glBufferType(bufferType), _iElementSize(iElementSize) {
@@ -1945,15 +1987,182 @@ protected:
   bool _bIsAllocated = false;
 };
 
-////////////////////////////////////////////////////////////////////////////////////
-
 class PhysicsComponent {
   glm::vec3 v;
 };
 class MeshComponent {
 };
 
-////////////////////////////////////////////////////////////////////////////////////
+class QuadBufferMesh {
+public:
+  QuadBufferMesh(int_fast32_t count = 8192, std::shared_ptr<Texture2D> pTex = nullptr) {
+    init(count);
+  }
+  virtual ~QuadBufferMesh() {
+    GL::glDeleteVertexArrays(1, &_vao);
+  }
+  void setTexture(std::shared_ptr<Texture2D> pTex) {
+    _pTex = pTex;
+  }
+  void setQuad(glm::vec3& v){
+    
+    _used++;
+  }
+  void render() {
+    glDisable(GL_CULL_FACE);
+
+    //Set default tex if not available.
+    std::shared_ptr<Texture2D> tex = _pTex;
+    if (tex == nullptr) {
+      tex = Texture2D::default1x1Tex();
+    }
+
+    tex->bind(TextureChannel::e::Channel0);
+    _prog->bind();
+    _prog->setTextureUf(tex, "_ufTexture0");
+    GL::glBindVertexArray(_vao);
+   // _inds->bindBuffer();
+    glDrawArrays(GL_POINTS, 0, _used);
+   // _inds->unbindBuffer();
+    GL::glBindVertexArray(0);
+    _prog->unbind();
+    tex->unbind(TextureChannel::e::Channel0);
+  }
+
+
+private:
+  void init(uint_fast32_t count = 8192) {
+    _count = count;
+    createProgram();
+    createVAO();
+    //
+    //     _inds = std::make_shared<GpuBuffer>("indexes", GL_ELEMENT_ARRAY_BUFFER, sizeof(unsigned int));
+    //     _inds->allocate(6 * _count);
+    //     std::vector<unsigned int> inds = { 0, 2, 3, 0, 3, 1 };
+    //     _inds->copyDataClientServer(inds.size(), inds.data(), sizeof(unsigned int));
+
+    _verts = std::make_shared<GpuBuffer>("verts", GL_ARRAY_BUFFER, sizeof(v3n3x2));
+    _verts->allocate(_count);
+
+    _verts_local.reserve((size_t)_count);
+
+    auto a = sizeof(_verts_local[0]);
+    auto b = sizeof(v3n3x2);
+
+    _verts->copyDataClientServer(_verts_local.size(), _verts_local.data(), sizeof(v3n3x2));
+  }
+  void createProgram() {
+    std::string vert = Stz "#version 420 core\n" +
+                       "//Vert Shader\n" +
+                       "\n" +
+                       "layout(location = 0) in vec3 _v301;\n" +
+                       "layout(location = 1) in vec3 _n301;\n" +
+                       "layout(location = 2) in vec2 _x201;\n" +
+                       "\n" +
+                       "out vec3 _v3Out;\n" +
+                       "out vec3 _n3Out;\n" +
+                       "out vec2 _x2Out;\n" +
+                       "\n" +
+                       "uniform mat4 _ufProj;\n" + 
+                       "uniform mat4 _ufView;\n" + 
+                       "\n" +
+                       "void main()\n" +
+                       "{\n" +
+                       "    //this is the stuff from the GUI shader.  It should work.  Note we don't even need a matrix\n" +
+                       "    _x2Out = _x201;\n" +
+                       "    _n3Out = _n301;\n" +
+                       "    vec4 transform = _ufProj * _ufView * vec4(_v301.x, _v301.y, _v301.z, 1);\n" +
+                       "    _v3Out = transform.xyz;\n"
+                       "    gl_Position =  transform;\n" +
+                       "}\n";
+    std::string geom = Stz "#version 420 core\n" +
+                       "//Vert Shader\n" +
+                       "\n" +
+                       "layout(location = 0) in vec2 _v201;\n" +
+                       "layout(location = 1) in vec2 _x201;\n" +
+                       "\n" +
+                       "out vec2 _x2Out;\n" +
+                       "out vec3 _v3Out;\n" +
+                       "\n" +
+                       "void main()\n" +
+                       "{\n" +
+                       "    //this is the stuff from the GUI shader.  It should work.  Note we don't even need a matrix\n" +
+                       "    _x2Out = _x201;\n" +
+                       "    _v3Out = vec3(_v201.x, _v201.y, -1);\n" +
+                       "    gl_Position =  vec4(_v201.x, _v201.y, -1, 1);\n" +
+                       "}\n";
+    std::string frag = Stz "#version 420 core\n" +
+                       "//Frag Shader\n" +
+                       "\n" +
+                       "uniform sampler2D _ufTexture0;\n" +
+                       "\n" +
+                       "in vec3 _v3Out;\n" +
+                       "in vec2 _x2Out;\n" +
+                       "out vec4 _gColorOut;\n" +
+                       "\n" +
+                       "void main() {\n" +
+                       "  _gColorOut = texture(_ufTexture0, vec2(_x2Out));\n" +
+                       "  if(_gColorOut.a <= 0.001) {\n" +
+                       "    discard;\n" +
+                       "    }\n" +
+                       "\n" +
+                       " // _gPositionOut = vec4(_v3Out, 0);\n" +
+                       " // _gNormalOut = vec4(0,0,0,0);//Flat Shade\n" +
+                       " // _gPlaneOut = vec4(0,0,0,0);\n" +
+                       "  //  _gPickOut = _ufPickId;\n" +
+                       "}\n";
+
+    _prog = std::make_shared<ShaderProgram>();
+    _prog->compile(vert, frag);
+  }
+  void createVAO() {
+    GL::glGenVertexArrays(1, &_vao);
+    GL::glBindVertexArray(_vao);
+    {
+      //Very basic vert + tex. The screen coordinates are -1,1 x and -1,1 y
+      GLint vLoc = GL::glGetAttribLocation(_prog->glId(), "_v201");
+      GLint xLoc = GL::glGetAttribLocation(_prog->glId(), "_x201");
+      if (vLoc == -1 || xLoc == -1) {
+      }
+      else {
+        OglErr::chkErrDbg();
+        _verts->bindBuffer();
+        OglErr::chkErrDbg();
+        GL::glEnableVertexAttribArray(vLoc);
+        GL::glVertexAttribPointer(
+          vLoc,
+          2,                      // size
+          GL_FLOAT,               // type
+          GL_FALSE,               // normalized?
+          sizeof(v2x2),           // stride
+          (GLvoid*)((intptr_t)0)  // array buffer offset
+        );
+        OglErr::chkErrDbg();
+
+        GL::glEnableVertexAttribArray(xLoc);
+        GL::glVertexAttribPointer(
+          xLoc,
+          2,                                          // size
+          GL_FLOAT,                                   // type
+          GL_FALSE,                                   // normalized?
+          sizeof(v2x2),                               // stride
+          (GLvoid*)((intptr_t)0 + sizeof(float) * 2)  // array buffer offset
+        );
+        OglErr::chkErrDbg();
+      }
+      GL::glBindVertexArray(0);
+    }
+  }
+
+  std::shared_ptr<ShaderProgram> _prog = nullptr;
+  //std::shared_ptr<GpuBuffer> _inds = nullptr;
+  std::shared_ptr<GpuBuffer> _verts = nullptr;
+  std::shared_ptr<Texture2D> _pTex = nullptr;
+  GLuint _vao = 0;
+  uint32_t _count = 1;
+  uint32_t _used=0;
+  std::vector<v3n3x2> _verts_local;
+};
 
 class App {
   //**
@@ -1988,9 +2197,9 @@ public:
         last_time = curtime;
 
         g->update(last_delta);
-        float cr = 1;//(float)(random() % RAND_MAX) / (float)RAND_MAX;
-        float cg = 1;//(float)(random() % RAND_MAX) / (float)RAND_MAX;
-        float cb = 1;//(float)(random() % RAND_MAX) / (float)RAND_MAX;
+        float cr = 1;  //(float)(random() % RAND_MAX) / (float)RAND_MAX;
+        float cg = 1;  //(float)(random() % RAND_MAX) / (float)RAND_MAX;
+        float cb = 1;  //(float)(random() % RAND_MAX) / (float)RAND_MAX;
 
         glClearColor(cr, cg, cb, 1);
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
@@ -2398,10 +2607,7 @@ private:
   }
 };
 
-////////////////////////////////////////////////////////////////////////////////////
-// PostDec / Deps
-
-#pragma region Deps
+#pragma region PostDec And Defs
 
 bool OglErr::handleErrors(bool bShowNote, bool bDoNotBreak, bool doNotLog, const string_t& shaderName, bool clearOnly) {
   App::checkSDLErr(doNotLog || !clearOnly, clearOnly);
@@ -2420,11 +2626,6 @@ void runtimeAssertion(const string_t& str) {
 
 #pragma endregion
 
-////////////////////////////////////////////////////////////////////////////////////
-////////////////////////////////////////////////////////////////////////////////////
-
-}  // namespace IDOBJ_TEST
-
-
+}  // namespace SFM
 
 #endif
