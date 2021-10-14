@@ -3,6 +3,10 @@
 //Short cut
 typedef sf2d::GL GL;
 
+class GameObject {
+public:
+  glm::vec2 _pos;
+};
 
 class MyGame : public sf2d::Game {
 public:
@@ -18,9 +22,25 @@ public:
     _quads = std::make_shared<sf2d::QuadBlitter>();
     _quads->setTexture(_tex);
   }
+  glm::vec2 mario_pos = glm::vec2(10, 10);
+  bool flipH = false;
   virtual void update(double delta) override {
     _quads->reset();
-    _quads->setQuad(glm::vec2(10,10), app()->viewport(), glm::vec4(1,1,1,1), glm::vec2(64,64));
+    _quads->setQuad(mario_pos, app()->viewport(), glm::vec4(1, 1, 1, 1), glm::vec2(64, 64), flipH);
+    if (sf2d::Gu::getGlobalInput()->keyPressOrHold(SDL_SCANCODE_D)) {
+      mario_pos.x += (float)(delta * 100);
+      flipH=false;
+    }
+    if (sf2d::Gu::getGlobalInput()->keyPressOrHold(SDL_SCANCODE_A)) {
+      mario_pos.x -= (float)(delta * 100);
+      flipH=true;
+    }
+    if (sf2d::Gu::getGlobalInput()->keyPressOrHold(SDL_SCANCODE_W)) {
+      mario_pos.y -= (float)(delta * 100);
+    }
+    if (sf2d::Gu::getGlobalInput()->keyPressOrHold(SDL_SCANCODE_S)) {
+      mario_pos.y += (float)(delta * 100);
+    }
   }
   virtual void render() override {
     _quads->render(app()->viewport());

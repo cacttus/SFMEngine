@@ -3,8 +3,8 @@
 
 #pragma once
 
-#ifndef __ENGINE__H__
-#define __ENGINE__H__
+#ifndef __SFM_GUI_3862103495683_H__
+#define __SFM_GUI_3862103495683_H__
 
 #pragma region Includes
 
@@ -95,18 +95,14 @@ std::string operator+(const std::string& str, const float& rhs) {
 
 #pragma region Enums
 
-namespace ButtonState {
-typedef enum { Up,
-               Press,
-               Down,
-               Release,
-               None } e;
-}
-namespace MouseButton {
-typedef enum { Left,
-               Right,
-               Middle } e;
-}
+enum class ButtonState { Up,
+                         Press,
+                         Hold,
+                         Release,
+                         None };
+enum class MouseButton { Left,
+                         Right,
+                         Middle };
 
 #pragma endregion
 
@@ -195,13 +191,12 @@ public:
   }
 };
 
-#pragma region Vertexes
+#pragma region Structs
 
 struct Box2f {
   glm::vec2 _p0;
   glm::vec2 _p1;
 };
-
 struct Pixel4f {
 public:
   float r = 0, g = 0, b = 0, a = 0;
@@ -212,7 +207,6 @@ public:
     this->a = a;
   }
 };
-
 struct v2x2 {
   float x, y, u, v;
   v2x2(float dx, float dy, float du, float dv) {
@@ -239,6 +233,7 @@ struct v_GuiVert {
   glm::vec2 _texsiz;
   glm::uvec2 _pick_color;
 };
+
 #pragma endregion
 
 class StringUtil {
@@ -480,33 +475,49 @@ public:
 class Input {
 public:
   void setKeyDown(SDL_Scancode code) {
-    setKey(code, ButtonState::e::Down);
+    setKey(code, ButtonState::Hold);
   }
   void setKeyUp(SDL_Scancode code) {
-    setKey(code, ButtonState::e::Up);
+    setKey(code, ButtonState::Up);
   }
-  void setLmbState(ButtonState::e b) {
+  void setLmbState(ButtonState b) {
     _eLMBState = b;
   }
-  void setRmbState(ButtonState::e b) {
+  void setRmbState(ButtonState b) {
     _eRMBState = b;
   }
   void setMouseWheel(int32_t m) {
     _iMouseWheel = m;
   }
-  void setKey(SDL_Scancode code, ButtonState::e val) {
+  void setKey(SDL_Scancode code, ButtonState val) {
     auto found = keys.find(code);
     if (found == keys.end()) {
-      keys.insert(std::make_pair(code, ButtonState::e::Up));
+      keys.insert(std::make_pair(code, ButtonState::Up));
       found = keys.find(code);
     }
     found->second = val;
   }
 
+  ButtonState getKey(SDL_Scancode code) {
+    auto it = keys.find(code);
+    if (it == keys.end()) {
+      keys.insert(std::make_pair(code, ButtonState::Up));
+      it = keys.find(code);
+      //TODO: get initial button state
+    }
+    return it->second;
+  }
+
+  bool keyPressOrHold(SDL_Scancode code) {
+    ButtonState s = getKey(code);
+
+    return (s == ButtonState::Press || s == ButtonState::Hold);
+  }
+
 private:
-  ButtonState::e _eLMBState = ButtonState::e::Up;
-  ButtonState::e _eRMBState = ButtonState::e::Up;
-  std::map<SDL_Scancode, ButtonState::e> keys;
+  ButtonState _eLMBState = ButtonState::Up;
+  ButtonState _eRMBState = ButtonState::Up;
+  std::map<SDL_Scancode, ButtonState> keys;
   int32_t _iMouseWheel = 0;
 };
 
@@ -1341,16 +1352,11 @@ enum class TextureFormat { Image4ub,     //png image from disk
                            DepthShadow,  //shadow map - Resolution & BPP, can be changed in the config.xml
                            CubeShadow    //cube shadow map. -  Resolution & BPP, can be changed in the config.xml
 };
-namespace TexWrap {
-typedef enum { Clamp,
-               Repeat } e;
-}
-namespace TexFilter {
-typedef enum { Linear,
-               Nearest } e;
-}
-namespace TextureChannel {
-typedef enum {
+enum class TexWrap { Clamp,
+                     Repeat };
+enum class TexFilter { Linear,
+                       Nearest };
+enum class TextureChannel {
   Channel0,  // don't use anymore.  Use an integer instead
   Channel1,  //
   Channel2,  //
@@ -1358,8 +1364,7 @@ typedef enum {
   Channel4,  //
   Channel5,  //
   Channel6,  //
-} e;
-}
+};
 class Texture2D {
 public:
   Texture2D(std::shared_ptr<Image32> img, bool genMipmaps, bool bRepeatU, bool bRepeatV) {
@@ -1469,7 +1474,7 @@ public:
   uint32_t boundChannel() {
     return _boundChannel;
   }
-  bool bind(TextureChannel::e eChannel) {
+  bool bind(TextureChannel eChannel) {
     if (_glId == 0) {
       //https://stackoverflow.com/questions/1108589/is-0-a-valid-opengl-texture-id
       BRLogError("Texture was not created on the GPU.");
@@ -1477,49 +1482,49 @@ public:
       return false;
     }
     else {
-      GL::glActiveTexture(GL_TEXTURE0 + eChannel);
+      GL::glActiveTexture(GL_TEXTURE0 + (int)eChannel);
       glBindTexture(_eGLTextureBinding, _glId);
       OglErr::chkErrDbg();
-      _boundChannel = eChannel;
+      _boundChannel = (int)eChannel;
     }
     return true;
   }
-  void unbind(TextureChannel::e eChannel) {
-    GL::glActiveTexture(GL_TEXTURE0 + eChannel);
+  void unbind(TextureChannel eChannel) {
+    GL::glActiveTexture(GL_TEXTURE0 + (int)eChannel);
     glBindTexture(_eGLTextureBinding, 0);
   }
-  void setWrapU(TexWrap::e wrap) {
-    bind(TextureChannel::e::Channel0);
-    if (wrap == TexWrap::e::Clamp) {
+  void setWrapU(TexWrap wrap) {
+    bind(TextureChannel::Channel0);
+    if (wrap == TexWrap::Clamp) {
       glTexParameteri(_eGLTextureBinding, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
     }
-    else if (wrap == TexWrap::e::Repeat) {
+    else if (wrap == TexWrap::Repeat) {
       glTexParameteri(_eGLTextureBinding, GL_TEXTURE_WRAP_S, GL_REPEAT);
     }
     else {
       BRThrowNotImplementedException();
     }
-    unbind(TextureChannel::e::Channel0);
+    unbind(TextureChannel::Channel0);
   }
-  void setWrapV(TexWrap::e wrap) {
-    bind(TextureChannel::e::Channel0);
-    if (wrap == TexWrap::e::Clamp) {
+  void setWrapV(TexWrap wrap) {
+    bind(TextureChannel::Channel0);
+    if (wrap == TexWrap::Clamp) {
       glTexParameteri(_eGLTextureBinding, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
     }
-    else if (wrap == TexWrap::e::Repeat) {
+    else if (wrap == TexWrap::Repeat) {
       glTexParameteri(_eGLTextureBinding, GL_TEXTURE_WRAP_T, GL_REPEAT);
     }
     else {
       BRThrowNotImplementedException();
     }
-    unbind(TextureChannel::e::Channel0);
+    unbind(TextureChannel::Channel0);
   }
-  void setFilter(TexFilter::e filter) {
+  void setFilter(TexFilter filter) {
     _eFilter = filter;
-    bind(TextureChannel::e::Channel0);
+    bind(TextureChannel::Channel0);
     OglErr::chkErrDbg();
 
-    if (filter == TexFilter::e::Linear) {
+    if (filter == TexFilter::Linear) {
       if (_bHasMipmaps) {
         GL::glGenerateMipmap(_eGLTextureBinding);
         glTexParameteri(_eGLTextureBinding, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
@@ -1532,7 +1537,7 @@ public:
         //GL_GENERATE_MIPMAP is deprecated.
       }
     }
-    else if (filter == TexFilter::e::Nearest) {
+    else if (filter == TexFilter::Nearest) {
       if (_bHasMipmaps) {
         GL::glGenerateMipmap(_eGLTextureBinding);
         glTexParameteri(_eGLTextureBinding, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
@@ -1548,7 +1553,7 @@ public:
     }
     OglErr::chkErrRt();
 
-    unbind(TextureChannel::e::Channel0);
+    unbind(TextureChannel::Channel0);
   }
 
 private:
@@ -1604,7 +1609,7 @@ private:
   GLenum _eGLTextureMipmapFormat = 0;
   GLenum _eGLTextureInternalFormat = 0;
   string_t _strLocation = "";
-  TexFilter::e _eFilter;
+  TexFilter _eFilter;
   string_t _strName = "";  //Note:this maps to glObjectLabel
   bool _bHasMipmaps = false;
   bool _bRepeatU = false;
@@ -2103,7 +2108,7 @@ public:
   void reset() {
     _used = 0;
   }
-  void setQuad(const glm::vec2& point, std::shared_ptr<RenderViewport> vp, const glm::vec4& color = glm::vec4(1, 1, 1, 1), const glm::vec2& wh = glm::vec2(-1, -1)) {
+  void setQuad(const glm::vec2& point, std::shared_ptr<RenderViewport> vp, const glm::vec4& color = glm::vec4(1, 1, 1, 1), const glm::vec2& wh = glm::vec2(-1, -1), bool flip_test = false) {
     if (_used >= _verts_local.size()) {
       BRLogError("Too many quads used.");
       Gu::debugBreak();
@@ -2113,8 +2118,14 @@ public:
     Box2f cpyPos;
     cpyPos._p0.x = point.x;
     cpyPos._p0.y = point.y;
-    cpyPos._p1.x = wh.x <= 0 ? getTex()->width() : wh.x;
-    cpyPos._p1.y = wh.y <= 0 ? getTex()->height() : wh.y;
+    cpyPos._p1.x = point.x + (wh.x <= 0 ? getTex()->width() : wh.x);
+    cpyPos._p1.y = point.y + (wh.y <= 0 ? getTex()->height() : wh.y);
+
+    if (flip_test) {
+      auto tmp = cpyPos._p0.x;
+      cpyPos._p0.x = cpyPos._p1.x;
+      cpyPos._p1.x = tmp;
+    }
 
     // convert to screen coordinates
     Gu::guiQuad2d(cpyPos, vp);
@@ -2138,6 +2149,7 @@ public:
 
     //Texs
     //Not sure, I think this is in texture (sub-texture) space, [0,1] not pixels.
+
     v._tex.x = 0;  // _q2Tex._p0.x;  //GL - bottom left
     v._tex.y = 0;  //_q2Tex._p0.y;
     v._tex.z = 1;  //_q2Tex._p1.x;  //GL - top right *this essentially flips it upside down
@@ -2157,7 +2169,6 @@ public:
     //   v._texsiz.y = fabsf(v._tex.w - v._tex.y);  //y is flipfloped again
     // }
 
-    
     //**Texture Adjust - modulating repeated textures causes seaming issues, especially with texture filtering
     //adjust the texture coordinates by some pixels to account for that.  0.5f seems to work well.
     static float pixAdjust = 0.51f;  // # of pixels to adjust texture by
@@ -2190,7 +2201,6 @@ public:
     v._tex.z -= w1px;
     v._tex.w -= h1px;
 
-
     //**End texture adjust
 
     //Pick Color
@@ -2218,7 +2228,7 @@ public:
 
     copyVerts();
 
-    tex->bind(TextureChannel::e::Channel0);
+    tex->bind(TextureChannel::Channel0);
     _prog->bind();
 
     // auto mproj = glm::perspective(60.0f, (float)((float)vp->width() / (float)vp->height()), 1.0f, 1000.0f);
@@ -2236,7 +2246,7 @@ public:
     // _inds->unbindBuffer();
     GL::glBindVertexArray(0);
     _prog->unbind();
-    tex->unbind(TextureChannel::e::Channel0);
+    tex->unbind(TextureChannel::Channel0);
   }
   void test_inline_vao() {
     GLint _v401 = GL::glGetAttribLocation(_prog->glId(), "_v401");
@@ -2591,7 +2601,7 @@ public:
           //Hypothetically We would resize FBO's here as well
         }
 
-        g->update(last_delta);
+        g->update((double)last_delta / (double)1'000'000);
 
         if (_bClearColorChanged) {
           glClearColor(_clearColor.r, _clearColor.g, _clearColor.b, _clearColor.a);
